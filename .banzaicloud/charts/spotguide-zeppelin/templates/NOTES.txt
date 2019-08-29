@@ -1,0 +1,98 @@
+Congratulations, you have deployed Zeppelin Spotguide to Kubernetes! Your release is named {{ .Release.Name }}.
+
+### Zeppelin
+
+{{ $hosts := index .Values "zeppelin-spark" "zeppelin" "ingress" "hosts" }}
+
+{{ if (has "/zeppelin" $hosts) }}
+Get Zeppelin Web UI URL by running this command:
+
+{{- if  eq .Values.banzaicloud.cluster.cloud "amazon" }}
+```
+echo https://$(kubectl get ing --namespace {{ .Release.Namespace }} -l app={{ .Release.Name }},release={{ .Release.Name }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')/zeppelin
+```
+{{- else}}
+```
+echo https://$(kubectl get ing --namespace {{ .Release.Namespace }} -l app={{ .Release.Name }},release={{ .Release.Name }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')/zeppelin
+```
+{{- end }}
+
+{{ else }}
+Zeppelin Web UI:
+{{ range $hosts }}
+- [{{ . }}](https://{{ . }})
+{{- end}}
+{{- end}}
+
+- [User secret]({{ $.Values.banzaicloud.organization.name }}/secret?name={{ .Values.banzaicloud.secret.zeppelin }})
+
+{{- if .Values.historyServer.enabled }}
+
+Spark logs are stored in the provided bucket for *Spark History Server* after your Spark context is closed. You can close the session by restarting 'spark' interpreter group on *Zeppelin* interpreter settings page here:
+
+{{ if (has "/zeppelin" $hosts) }}
+https://Zeppelin_Web_UI_URL/interpreter
+{{- else }}
+{{ range $hosts }}
+- [{{ . }}/#/interpreter](https://{{ . }}/#/interpreter)
+{{- end }}
+{{- end }}
+
+In case you already opened *Spark History Server*, you need to refresh browser page to reload completed application logs.
+
+### Spark History Server
+
+You can view your event logs of your spark job, in Spark History Server:
+
+{{ $hosts := index .Values "zeppelin-spark" "spark" "spark-hs" "ingress" "hosts" }}
+
+{{ if not (has "/" $hosts) }}
+{{ range $hosts }}
+- [{{ . }}](https://{{ . }})
+{{- end }}
+{{ else }}
+
+Get the application URL by running this command:
+
+{{- if  eq .Values.banzaicloud.cluster.cloud "amazon" }}
+```
+echo https://$(kubectl get ing --namespace {{ .Release.Namespace }} -l app=spark-hs,release={{ .Release.Name }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].hostname}')
+```
+{{- else}}
+```
+echo https://$(kubectl get ing --namespace {{ .Release.Namespace }} -l app=spark-hs,release={{ .Release.Name }} -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
+```
+{{- end}}
+{{- end}}
+
+- [User secret]({{ $.Values.banzaicloud.organization.name }}/secret?name={{ .Values.banzaicloud.secret.historyServer }})
+{{- end}}
+
+### Monitoring
+
+The monitoring dashboard can be accessed on the following host:
+
+- [Grafana]({{ .Values.banzaicloud.organization.name }}/deployment?cluster={{ .Values.banzaicloud.cluster.name }}&releaseName=monitor&name=monitor)
+- [User secret]({{ $.Values.banzaicloud.organization.name }}/secret?name=cluster-{{ .Values.banzaicloud.cluster.id }}-grafana)
+
+{{- if .Values.banzaicloud.organization.name }}
+
+### CI/CD Pipeline
+
+Every time you make changes to the source code and update the `master` branch, the CI/CD pipeline will be triggered to reconfigure your spark cluster.
+
+[Go to CI/CD]({{ $.Values.banzaicloud.organization.name }}/cicd/{{ include "repo-name" . }})
+
+{{- end }}
+
+{{- if .Values.banzaicloud.organization.name }}
+
+### Secrets
+
+The following secrets were created as part of the spotguide:
+
+[Go to Secrets]({{ $.Values.banzaicloud.organization.name }}/secret?filter={{ include "repo-tag" . }})
+
+{{- end }}
+
+You can find more info about spotguide [here](https://github.com/spotguides/zeppelin-spark/blob/master/README.md).

@@ -1,0 +1,122 @@
+cluster:
+  action: GetCluster
+  cloud: amazon
+  name: ziedbfg72g
+pipeline:
+  install_history_server_bucket_secrets:
+    action: InstallSecret
+    clusterSecret:
+      convertToPreferredFormat: true
+      merge: true
+      name: '{{ .CICD_REPO_NAME }}-hs-bucket'
+      namespace: datascience
+      sourceSecretName: eks-admin
+      spec: []
+    image: banzaicloud/ci-pipeline-client:0.11
+  install_history_server_auth_secrets:
+    action: InstallSecret
+    clusterSecret:
+      merge: true
+      name: '{{ .CICD_REPO_NAME }}-hs-auth'
+      namespace: datascience
+      sourceSecretName: historyserverpass
+      spec:
+      - name: htpasswd
+        source: htpasswd
+    image: banzaicloud/ci-pipeline-client:0.11
+  install_zeppelin_auth_secrets:
+    action: InstallSecret
+    clusterSecret:
+      merge: true
+      name: '{{ .CICD_REPO_NAME }}-zeppelin-auth'
+      namespace: datascience
+      sourceSecretName: zeppelin-admin
+      spec: []
+    image: banzaicloud/ci-pipeline-client:0.11
+  package_application:
+    image: lachlanevenson/k8s-helm:latest
+    commands:
+    - helm init -c
+    - helm package ./.banzaicloud/charts/spotguide-zeppelin
+  deploy_application:
+    action: EnsureDeployment
+    deployment:
+      name: ./spotguide-zeppelin-1.0.0.tgz
+      namespace: datascience
+      releaseName: '{{ .CICD_REPO_NAME }}'
+      values:
+        banzaicloud:
+          secret:
+            historyServer: historyserverpass
+            zeppelin: zeppelin-admin
+          spark:
+            version: 2.4.3
+        historyServer:
+          enabled: true
+        zeppelin-spark:
+          spark:
+            monitoring:
+              enabled: true
+              jmxCollector: |
+                lowercaseOutputName: false
+                lowercaseOutputLabelNames: false
+                whitelistObjectNames: ["*:*"]
+              metricsProperties: |
+                # Enable Prometheus for all instances by class name
+                *.sink.prometheus.class=com.banzaicloud.spark.metrics.sink.PrometheusSink
+                # Prometheus pushgateway address
+                *.sink.prometheus.pushgateway-address=prometheus-pushgateway.pipeline-system:9091
+                *.sink.prometheus.pushgateway-enable-timestamp=true
+                *.sink.prometheus.enable-dropwizard-collector=false
+                *.sink.prometheus.enable-jmx-collector=true
+                *.sink.prometheus.jmx-collector-config=/opt/spark/conf/monitoring/jmxCollector.yaml
+                *.sink.jmx.class=org.apache.spark.metrics.sink.JmxSink
+                # Enable JVM metrics source for all instances by class name
+                *.source.jvm.class=org.apache.spark.metrics.source.JvmSource
+            spark-hs:
+              image:
+                tag: v2.4.3.198
+              ingress:
+                annotations:
+                  ingress.kubernetes.io/ssl-redirect: "true"
+                  kubernetes.io/ingress.class: traefik
+                  traefik.frontend.rule.type: PathPrefixStrip
+                  traefik.ingress.kubernetes.io/auth-secret: '{{ .CICD_REPO_NAME }}-hs-auth'
+                  traefik.ingress.kubernetes.io/auth-type: basic
+                enabled: true
+                hosts:
+                - shs-{{ printf "%s-%s" .CICD_REPO_NAME .CLUSTER_NAME | sha1sum | trunc 10}}.{{.ORG_NAME}}.{{.DOMAIN_NAME}}
+              sparkEventLogStorage:
+                aliOssRegion: eu-central-1
+                azureStorageAccountName: null
+                cloudProvider: amazon
+                logDirectory: poc-banzaicloud
+                oracleNamespace: null
+                oracleRegion: eu-central-1
+                pipelineSecretName: eks-admin
+                secretName: '{{ .CICD_REPO_NAME }}-hs-bucket'
+          zeppelin:
+            image:
+              tag: v0.9.0-k8s-1.0.79
+            ingress:
+              annotations:
+                ingress.kubernetes.io/ssl-redirect: "true"
+                kubernetes.io/ingress.class: traefik
+                traefik.frontend.rule.type: PathPrefixStrip
+              baseUrl: null
+              enabled: true
+              hosts:
+              - zeppelin-{{ printf "%s-%s" .CICD_REPO_NAME .CLUSTER_NAME | sha1sum | trunc 10}}.{{.ORG_NAME}}.{{.DOMAIN_NAME}}
+            sparkEventLogStorage:
+              aliOssRegion: eu-central-1
+              cloudProvider: amazon
+              logDirectory: poc-banzaicloud
+              oracleNamespace: null
+              oracleRegion: eu-central-1
+              secretName: '{{ .CICD_REPO_NAME }}-hs-bucket'
+            sparkSubmitOptions:
+              k8sNameSpace: datascience
+              sparkImage:
+                tag: v0.9.0-k8s-1.0.79
+            userCredentialSecretName: '{{ .CICD_REPO_NAME }}-zeppelin-auth'
+    image: banzaicloud/ci-pipeline-client:0.11
